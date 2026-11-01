@@ -1,53 +1,53 @@
 # CS336 from Scratch
 
-An unofficial, educational implementation of **Stanford CS336 Spring 2025 Assignment 1: Basics**. The project builds a byte-level BPE tokenizer and a Transformer language model from scratch, trains it on TinyStories, and supports local text generation.
+一个面向学习的 **Stanford CS336 Spring 2025 Assignment 1: Basics** 非官方实现。项目从零实现 byte-level BPE tokenizer 和 Transformer 语言模型，在 TinyStories 上完成训练，并支持在本地生成英文儿童故事。
 
-The original assignment scaffold, tests, and handout are provided by Stanford University under the MIT License. See [LICENSE](LICENSE).
+原始作业脚手架、测试和讲义由 Stanford University 基于 MIT License 提供，详见 [LICENSE](LICENSE)。本仓库不是 Stanford 官方仓库。
 
-## Implemented
+## 已实现功能
 
-- Byte-level BPE training with parallel pretokenization and incremental merge statistics
-- Streaming tokenizer with UTF-8 and special-token support
-- Linear, Embedding, RMSNorm, SwiGLU, RoPE, causal multi-head attention
-- Pre-norm Transformer language model
-- Numerically stable softmax and cross-entropy
-- AdamW, cosine learning-rate schedule, and gradient clipping
-- Memory-mapped data loading, checkpoints, validation, and JSONL metrics
-- Temperature and top-p decoding
-- CPU, Apple MPS, and CUDA/bf16 execution
+- Byte-level BPE：多进程预分词、增量 merge 统计
+- 支持 UTF-8、special tokens 和任意 chunk 边界的流式 Tokenizer
+- Linear、Embedding、RMSNorm、SwiGLU、RoPE、因果多头注意力
+- Pre-norm Transformer 语言模型
+- 数值稳定的 softmax 和交叉熵
+- AdamW、cosine 学习率调度、梯度裁剪
+- memmap 数据加载、checkpoint、验证集评估、JSONL 训练日志
+- Temperature 和 top-p 文本生成
+- 支持 CPU、Apple MPS、CUDA/bf16
 
-Core neural-network operations are implemented with PyTorch tensor operators rather than high-level `nn.Linear`, `nn.Embedding`, `torch.nn.functional`, or `torch.optim.AdamW` shortcuts.
+核心神经网络计算使用 PyTorch tensor 算子实现，没有使用 `nn.Linear`、`nn.Embedding`、`torch.nn.functional` 或 `torch.optim.AdamW` 等高层现成实现替代作业要求。
 
-## Verified result
+## 训练结果
 
-A 22.7M-parameter model was trained for 10,000 steps (327.68M tokens) on a single NVIDIA A100 40GB:
+使用单张 NVIDIA A100 40GB，将约 22.7M 参数的模型训练 10,000 步，共计 327.68M tokens：
 
-| Metric | Result |
+| 指标 | 结果 |
 |---|---:|
-| Training time | 28.2 minutes |
-| Independent 100-batch validation loss | **1.38567** |
+| 训练耗时 | 28.2 分钟 |
+| 独立 100-batch validation loss | **1.38567** |
 | Validation perplexity | **3.9975** |
-| Peak training memory | approximately 11.6GiB |
+| 峰值训练显存 | 约 11.6GiB |
 
-Linux test result: **59 passed, 1 xpassed**. See [the experiment report](RESULTS.zh-CN.md) for configuration, validation curves, and a generated sample.
+Linux 测试结果：**59 passed、1 xpassed**。完整配置、验证曲线和生成样例见[实验报告](RESULTS.zh-CN.md)。
 
-## Quick start
+## 快速开始
 
-Requires Python 3.11 and [uv](https://docs.astral.sh/uv/).
+需要 Python 3.11 和 [uv](https://docs.astral.sh/uv/)：
 
 ```bash
 uv sync --python 3.11
 uv run pytest -q
 ```
 
-Download and prepare TinyStories:
+下载并处理 TinyStories：
 
 ```bash
 scripts/download_tinystories.sh
 PYTHON_BIN="$PWD/.venv/bin/python" scripts/prepare_tinystories.sh
 ```
 
-Run a short CUDA smoke test:
+运行 20 步 CUDA smoke test：
 
 ```bash
 RUN_DIR="$PWD/runs/cloud_smoke" scripts/train_tinystories_baseline.sh \
@@ -56,41 +56,42 @@ RUN_DIR="$PWD/runs/cloud_smoke" scripts/train_tinystories_baseline.sh \
   --checkpoint-interval 20
 ```
 
-Train the full baseline:
+启动完整 baseline 训练：
 
 ```bash
 scripts/train_tinystories_baseline.sh
 ```
 
-## Local story generation
+## 本地生成故事
 
-Datasets and trained checkpoints are intentionally not tracked by Git. After training, or after placing a compatible checkpoint in `runs/tinystories_baseline/`, run:
+数据集和训练后的 checkpoint 不纳入 Git。完成训练，或者将兼容的 checkpoint 放到 `runs/tinystories_baseline/` 后，运行：
 
 ```bash
 scripts/story.sh
 ```
 
-Enter an English story opening at the prompt:
+看到提示后输入英文故事开头：
 
 ```text
 Story opening> Once upon a time, a little rabbit found a red balloon.
 ```
 
-See [LOCAL_USAGE.zh-CN.md](LOCAL_USAGE.zh-CN.md) for interactive and one-shot generation options.
+模型会在终端中续写故事。交互模式、单次生成和参数说明见[本地使用文档](LOCAL_USAGE.zh-CN.md)。
 
-## Repository layout
+## 目录结构
 
 ```text
-cs336_basics/       Tokenizer, model, training, and decoding implementations
-scripts/            Data, training, evaluation, cloud, and local inference tools
-tests/              Official assignment tests and additional regression tests
-RUNNING.zh-CN.md    Reproduction guide
-RESULTS.zh-CN.md    Training configuration and experiment results
+cs336_basics/       Tokenizer、模型、训练和解码实现
+scripts/            数据处理、训练、评估、云端和本地推理脚本
+tests/              官方作业测试及补充回归测试
+RUNNING.zh-CN.md    复现指南
+RESULTS.zh-CN.md    训练配置与实验结果
+LOCAL_USAGE.zh-CN.md 本地推理使用说明
 ```
 
-## Data and artifacts
+## 数据与模型文件
 
-The repository does not include the TinyStories dataset or trained model weights. Download and preprocessing scripts are provided. Expected local paths are:
+仓库不包含 TinyStories 数据集和训练后的模型权重。可以通过脚本下载、预处理并训练。默认本地路径为：
 
 ```text
 data/tinystories_10k/
@@ -99,6 +100,6 @@ data/tinystories_valid.bin
 runs/tinystories_baseline/checkpoint.pt
 ```
 
-## License and attribution
+## License 与版权
 
-MIT License. Original assignment materials are Copyright 2025 Stanford University. This is an independent educational implementation, not an official Stanford repository.
+MIT License。原始作业材料 Copyright 2025 Stanford University；后续实现与修改 Copyright 2026 cs336-from-scratch contributors。
