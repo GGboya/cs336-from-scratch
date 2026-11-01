@@ -29,7 +29,7 @@
 | Validation perplexity | **3.9975** |
 | 峰值训练显存 | 约 11.6GiB |
 
-Linux 测试结果：**59 passed、1 xpassed**。完整配置、验证曲线和生成样例见[实验报告](RESULTS.zh-CN.md)。
+Linux 测试结果：**59 passed、1 xpassed**。完整配置、验证曲线和生成样例见[实验报告](https://github.com/GGboya/cs336-from-scratch/blob/main/RESULTS.zh-CN.md)。
 
 ## 快速开始
 
@@ -76,7 +76,7 @@ scripts/story.sh
 Story opening> Once upon a time, a little rabbit found a red balloon.
 ```
 
-模型会在终端中续写故事。交互模式、单次生成和参数说明见[本地使用文档](LOCAL_USAGE.zh-CN.md)。
+模型会在终端中续写故事。交互模式、单次生成和参数说明见[本地使用文档](https://github.com/GGboya/cs336-from-scratch/blob/main/LOCAL_USAGE.zh-CN.md)。
 
 ## 目录结构
 
