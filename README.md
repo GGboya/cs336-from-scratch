@@ -1,8 +1,57 @@
-# CS336 from Scratch
+# 用 LeetCode 的方式手撕大模型
 
-一个面向学习的 **Stanford CS336 Spring 2025 Assignment 1: Basics** 非官方实现。项目从零实现 byte-level BPE tokenizer 和 Transformer 语言模型，在 TinyStories 上完成训练，并支持在本地生成英文儿童故事。
+> 从 BPE 到 Transformer，从算法题到真实训练。
+
+**文章讲人话，算法练真功，代码能跑通，模型真训练。**
+
+这是一个面向传统程序员的语言模型算法练习与全流程实践项目，也是 **Stanford CS336 Spring 2025 Assignment 1: Basics** 的非官方实现。
+
+我们希望通过一条渐进路线，让有编程基础、第一次接触 LLM 的读者真正理解每个组件：
+
+```text
+通俗文章 → 简化算法题 → 独立测试 → 易读参考答案 → 真实工程实现 → GPU 训练 → 本地推理
+```
 
 原始作业脚手架、测试和讲义由 Stanford University 基于 MIT License 提供，详见 [LICENSE](LICENSE)。本仓库不是 Stanford 官方仓库。
+
+## 按“Query → 模型 → 输出”学习与练习
+
+```text
+Query → Tokenizer（BPE）→ Token IDs → 模型
+→ 下一个 token 的概率 → 解码 → 输出文本
+```
+
+先理解输入和输出，再逐层打开模型内部；训练细节放在生成流程之后继续展开。
+
+每道题的说明、输入输出和示例都放在对应的 `README.md` 中。读者只需要实现 `solution.py` 里的核心函数，测试由项目提供；参考答案使用普通循环，重点展示逻辑而不是 Python 技巧。
+
+### 1. Tokenizer 与 BPE：文本 → Token IDs
+
+1. [BPE 训练：学习 merges 和 vocab](exercises/bpe/README.md)
+2. [完整 BPE 编码：文本 → token IDs](exercises/bpe_encode/README.md)
+
+### 2. Embedding：Token IDs → 向量
+
+[Embedding 查表：token IDs → 向量](exercises/embedding/README.md)
+
+### 3. 模型训练：预测误差 → loss → 反向传播与权重更新
+
+1. [Softmax 与交叉熵：把预测错误转换成 loss](exercises/language_model_loss/README.md)
+2. [Embedding 反向传播：梯度累加与权重更新](exercises/embedding_backward/README.md)
+
+先用正确 token 的概率计算 loss，再通过反向传播得到梯度，最后更新模型参数。推理时只需要使用训练好的参数，不计算 loss，也不更新权重。
+
+运行全部现有练习：
+
+```bash
+.venv/bin/python exercises/run.py bpe
+.venv/bin/python exercises/run.py bpe_encode
+.venv/bin/python exercises/run.py embedding
+.venv/bin/python exercises/run.py embedding_backward
+.venv/bin/python exercises/run.py language_model_loss
+```
+
+配套文章：[用 LeetCode 的方式手撕大模型](share.md)。文章按照同一流程展开，每个组件介绍完后都会附上对应练习。
 
 ## 已实现功能
 

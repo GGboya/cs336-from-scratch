@@ -1,0 +1,1 @@
+"""Simplified embedding lookup exercise."""
