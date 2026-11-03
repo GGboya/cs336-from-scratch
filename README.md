@@ -14,44 +14,47 @@
 
 原始作业脚手架、测试和讲义由 Stanford University 基于 MIT License 提供，详见 [LICENSE](LICENSE)。本仓库不是 Stanford 官方仓库。
 
-## 按“Query → 模型 → 输出”学习与练习
+## 学习路线：先推理，再训练
 
-```text
-Query → Tokenizer（BPE）→ Token IDs → 模型
-→ 下一个 token 的概率 → 解码 → 输出文本
-```
+这套课程用 **32 道 LeetCode 式练习**覆盖 CS336 Assignment 1 的核心算法，并通过真实工程对照、GPU 训练和本地推理完成落地。
 
-先理解输入和输出，再逐层打开模型内部；训练细节放在生成流程之后继续展开。
+每道题的 `README.md` 都包含简短概念、输入输出和手算示例；读者只实现 `solution.py`，测试由项目提供，`reference.py` 使用普通循环展示参考答案。
 
-每道题的说明、输入输出和示例都放在对应的 `README.md` 中。读者只需要实现 `solution.py` 里的核心函数，测试由项目提供；参考答案使用普通循环，重点展示逻辑而不是 Python 技巧。
+完整学习地图和逐课讲解见 [share.md](share.md)。
 
-### 1. Tokenizer 与 BPE：文本 → Token IDs
+### 第一部分：推理——Query → 模型 → 输出
 
-1. [BPE 训练：学习 merges 和 vocab](exercises/bpe/README.md)
-2. [完整 BPE 编码：文本 → token IDs](exercises/bpe_encode/README.md)
+| 模块 | 练习 |
+|---|---|
+| Tokenizer | [UTF-8](exercises/utf8_bytes/README.md)、[BPE 训练](exercises/bpe/README.md)、[Special Tokens](exercises/special_tokens/README.md)、[BPE 编码](exercises/bpe_encode/README.md) |
+| Transformer 基础 | [Embedding](exercises/embedding/README.md)、[Linear](exercises/linear/README.md)、[RMSNorm](exercises/rmsnorm/README.md)、[RoPE](exercises/rope/README.md) |
+| Attention | [Scaled Attention](exercises/scaled_attention/README.md)、[Causal Mask](exercises/causal_mask/README.md)、[Multi-Head](exercises/multihead_attention/README.md)、[完整 Causal MHA](exercises/causal_multihead/README.md) |
+| Block 与输出 | [SwiGLU](exercises/swiglu/README.md)、[Residual / Pre-Norm](exercises/transformer_block/README.md)、[完整 Block](exercises/transformer_block_forward/README.md)、[完整 TransformerLM](exercises/transformer_lm_forward/README.md)、[LM Head](exercises/lm_head/README.md)、[Softmax](exercises/softmax/README.md) |
+| 解码 | [Greedy Decoding](exercises/greedy_decoding/README.md)、[Temperature](exercises/temperature/README.md)、[Top-p](exercises/top_p_sampling/README.md)、[自回归生成](exercises/autoregressive_generation/README.md) |
 
-### 2. Embedding：Token IDs → 向量
+### 第二部分：训练——预测误差 → loss → 参数更新
 
-[Embedding 查表：token IDs → 向量](exercises/embedding/README.md)
+| 模块 | 练习 |
+|---|---|
+| Loss 与反向传播 | [交叉熵](exercises/language_model_loss/README.md)、[一维梯度下降](exercises/gradient_descent/README.md)、[Softmax CE Backward](exercises/softmax_cross_entropy_backward/README.md)、[Embedding Backward](exercises/embedding_backward/README.md) |
+| 优化与稳定性 | [AdamW](exercises/adamw/README.md)、[Gradient Clipping](exercises/gradient_clipping/README.md)、[Warmup + Cosine LR](exercises/cosine_learning_rate/README.md) |
+| 数据与综合训练 | [Training Batch](exercises/training_batch/README.md)、[Tiny Language Model](exercises/tiny_language_model/README.md)、[Resource Accounting](exercises/resource_accounting/README.md) |
 
-### 3. 模型训练：预测误差 → loss → 反向传播与权重更新
+简化练习与 memmap、checkpoint、混合精度、验证集和流式编码等真实工程的对应关系见 [A1 工程对照](A1_ENGINEERING.zh-CN.md)。
 
-1. [Softmax 与交叉熵：把预测错误转换成 loss](exercises/language_model_loss/README.md)
-2. [Embedding 反向传播：梯度累加与权重更新](exercises/embedding_backward/README.md)
+### 运行练习
 
-先用正确 token 的概率计算 loss，再通过反向传播得到梯度，最后更新模型参数。推理时只需要使用训练好的参数，不计算 loss，也不更新权重。
-
-运行全部现有练习：
+以 BPE 为例：
 
 ```bash
 .venv/bin/python exercises/run.py bpe
-.venv/bin/python exercises/run.py bpe_encode
-.venv/bin/python exercises/run.py embedding
-.venv/bin/python exercises/run.py embedding_backward
-.venv/bin/python exercises/run.py language_model_loss
 ```
 
-配套文章：[用 LeetCode 的方式手撕大模型](share.md)。文章按照同一流程展开，每个组件介绍完后都会附上对应练习。
+每道题的 README 都给出对应命令。开发时可以验证全部参考答案：
+
+```bash
+.venv/bin/python exercises/verify_references.py
+```
 
 ## 已实现功能
 

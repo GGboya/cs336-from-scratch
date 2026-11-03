@@ -9,453 +9,291 @@ https://cs336.stanford.edu/spring2025/index.html
 > 用 LeetCode 的方式手撕大模型：从 BPE 到 Transformer，从算法题到真实训练。
 > 文章讲人话，算法练真功，代码能跑通，模型真训练。
 
-## 先从一次提问看起：Query → 模型 → 输出
+## 学习地图：先推理，再训练
 
-假设我们给模型输入一句 query：
-
-```text
-Once upon a time
-```
-
-它最后为什么会接着输出一个故事？我们先不讨论模型是怎样训练的，只看一句输入是怎样变成输出的。
-
-### 第一步：Query 仍然只是文本
-
-此时，输入还是一个普通字符串。模型不能直接拿这段文字做数学计算，需要先把它转换成数值输入。
-
-### 第二步：Tokenizer 把文本转换成 token IDs
-
-Tokenizer 先把文本切成一个个 token，再根据词典给每个 token 一个固定编号：
+这套课程按照两个大问题展开：
 
 ```text
-"Once upon a time"
-→ ["Once", " upon", " a", " time"]
-→ [430, 439, 259, 398]
+推理：一句 Query 怎样变成用户看到的文本？
+训练：模型参数为什么能给出有用的预测？
 ```
 
-所以，**真正送进模型的不是原始字符串，而是一串 token IDs。** 至于文本为什么这样切、编号从哪里来，就是后面 BPE 章节要解决的问题。
+每课都包含简短概念、矩阵或数值示例、核心函数、独立 case 和普通循环版参考答案。先完成推理，再进入训练。
 
-### 第三步：模型接收 token IDs，预测下一个 token
-
-我们现在可以先把模型当成一个黑盒：
-
-```text
-输入：[430, 439, 259, 398]
-       ↓
-     模型
-       ↓
-输出：词表中每个候选 token 成为下一个 token 的概率
-```
-
-例如，模型可能认为下一个 token 是 `","` 的概率最高。
-
-这个黑盒内部怎样从 token IDs 算出这些概率，我们后面再逐层拆开：先经过 Embedding，再经过 Transformer Blocks，最后经过 LM Head。
-
-### 第四步：把选中的 token 转换回文本
-
-解码阶段会根据概率选出一个 token，再由 Tokenizer 把它转换回文本片段，接到原输入后面：
-
-```text
-Once upon a time,
-```
-
-然后把更长的输入重新交给模型，继续预测下一个 token：
-
-```text
-Once upon a time, there
-Once upon a time, there was
-Once upon a time, there was a
-```
-
-所以，大模型生成回答的基本方式就是：**一次预测一个 token，不断重复。**
-
-整个过程可以先记成：
+# 第一部分：推理——Query 怎样变成用户看到的文本？
 
 ```text
 Query
-→ Tokenizer（BPE）
+→ UTF-8 / BPE Tokenizer
 → Token IDs
-→ 模型
-→ 下一个 token 的概率
-→ 解码
-→ 输出文本
-```
-
-接下来，我们先解决输入侧的问题：文本怎样经过 BPE 变成 token IDs。讲完 BPE，再打开模型这个黑盒，慢慢看清 Embedding、Transformer 和 LM Head 分别做了什么。理解这条生成流程之后，再讨论模型是怎样通过训练学会这些能力的。
-
-## 一、Tokenizer（BPE）：文本 → Token IDs
-文本 → Tokenizer → Token IDs
-计算机并不懂咱们的文字，需要把常见片段切成 token，再编成数字。
-"Once upon a time"
-  → ["Once", " upon", " a", " time"]
-  → [430, 439, 259, 398]
-
-这里引入了一个新问题，文本是怎么被切成 token 的呢？
-
----
-
-答案是：**我们使用了一种叫 BPE（Byte Pair Encoding，字节对编码）的算法。**
-
-BPE 会做两件事：
-
-1. **训练 Tokenizer 时**：从最小的字节片段开始，不断统计相邻片段的出现频次，把高频 pair 合并成新 token，逐渐形成一本“片段词典”。
-2. **处理新文本时**：按照已经学到的合并规则，把文本切成 token，再查询词典，得到每个 token 对应的数字 ID。
-
-举个极简例子。假设训练语料只有：
-
-```text
-he、he、her
-```
-
-训练 Tokenizer 时，先统计相邻片段：
-
-```text
-(h, e) 出现 3 次
-(e, r) 出现 1 次
-```
-
-`(h, e)` 的频次最高，因此把它合并成 `he`。训练结束后，我们得到：
-
-```text
-合并规则：(h, e) → he
-
-词典：
-h  → 0
-e  → 1
-r  → 2
-he → 3
-```
-
-接下来处理新文本 `her`。先按照合并规则切分：
-
-```text
-[h, e, r]
-→ [he, r]
-```
-
-再查询词典：
-
-```text
-he → 3
-r  → 2
-```
-
-最终得到：
-
-```text
-"her" → [3, 2]
-```
-
-这就是两个阶段的关系：**训练时制作合并规则和词典，处理新文本时使用它们。**
-
-因此：
-
-```text
-文本是怎样被切成 token 的？
-→ 由 BPE 学到的 merge 规则决定。
-
-token 的数字从哪里来？
-→ 由训练得到的 vocab 词典决定。
-```
-
-### 有了词典，怎么把文字变成数字？
-
-Tokenizer 训练完成后，我们会保存两样东西：
-
-```text
-vocab.json   # 每个 token 对应哪个数字
-merges.txt   # 片段应该按照什么顺序合并
-```
-
-处理新文本时，先按照 `merges.txt` 中的规则进行切分，再查询 `vocab.json`：
-
-```text
-"Once upon a time"
-→ ["Once", " upon", " a", " time"]
-→ [430, 439, 259, 398]
-```
-
-这里的数字不是随机分配的，也不是根据单词含义计算出来的。它们只是 token 在词典里的固定编号，类似字典中的页码。
-
-### 为什么不是简单按照单词切分？
-
-如果每个单词只对应一个 token，就会遇到几个问题：
-
-- 新名字、拼写错误和新单词可能不在词典里；
-- 词表需要覆盖大量单词，规模会越来越大；
-- `cat` 和 `cats` 会被看成完全无关的两个 token。
-
-BPE 则提供了一种折中：常见片段可以合并成一个 token，不常见的内容则继续拆成更小的片段。
-
-例如：
-
-```text
-"i love ggboy"
-→ ["i", " love", " g", "g", "b", "oy"]
-```
-
-`love` 是常见片段，所以只需要一个 token；`ggboy` 不是常见片段，只能由多个 token 拼出来。
-
-因此，**token 不一定是一个完整单词，也不一定只是一个字符，而是 Tokenizer 学到的文本片段。**
-
-我们这次使用了约 2.23GB 的 TinyStories 文本，从 256 个基础字节和 1 个特殊 token 开始，经过 9,743 次合并，最终得到一本包含 10,000 个 token 的“片段词典”。
-
-这里的“训练”不是神经网络中的反向传播，而是**统计文本并学习合并规则**。
-
-### 真正的 Tokenizer 还需要处理什么？
-
-上面介绍的是 BPE 的核心思想。要把它变成能够处理真实语料的 Tokenizer，还需要处理：
-
-- 中文、emoji 等 Unicode 文本；
-- 标点、空格和特殊标记；
-- 数 GB 语料的统计性能；
-- 大文件的流式编码；
-- 如何在不重新扫描全部语料的情况下更新 pair 频次。
-
-这些不属于 BPE 的核心算法，却是处理大规模文本时不可缺少的工程细节。
-
-### 动手练习：Tokenizer 与 BPE
-
-如果想亲手实现这些过程，我准备了一组 LeetCode 式算法题。题目、输入输出和示例都放在各自文件中，只需要实现核心函数：
-
-1. [BPE 训练：学习 merges 和 vocab](exercises/bpe/README.md)
-2. [完整 BPE 编码：文本 → token IDs](exercises/bpe_encode/README.md)
-
-分别运行测试：
-
-```bash
-.venv/bin/python exercises/run.py bpe
-.venv/bin/python exercises/run.py bpe_encode
-```
-
-## 二、Embedding：Token IDs → 向量
-
-现在我们已经知道，一句话是怎样变成 token IDs 的：
-
-```text
-"i love you"
-→ ["i", " love", " you"]
-→ [106, 867, 349]
-```
-
-但这三个数字只是词典编号，不能直接表达词语的特征。比如，ID 867 并不比 ID 106 更重要，它们之间的大小和距离也没有实际语义。
-
-下一步，就是根据这些编号，到 **Embedding 权重表**中取出对应的向量：
-
-```text
-106 → Embedding 表第 106 行
-867 → Embedding 表第 867 行
-349 → Embedding 表第 349 行
-```
-
-一个向量里具体放多少个数，是模型设计时选择的超参数，叫作向量维度，并不是由 token ID 计算出来的。在我们的模型里，这个维度被设置为 512，也就是每个 token 都用一个 512 维向量表示：
-
-```text
-[106, 867, 349]
-        ↓ Embedding
-[
-  [0.12, -0.37, ..., 0.08],
-  [0.45,  0.03, ..., 0.21],
-  [0.06, -0.18, ..., 0.33],
-]
-```
-
-形状变化是：
-
-```text
-(3,) → (3, 512)
-```
-
-如果输入还包含 batch 和 sequence 维度，则是：
-
-```text
-(batch, sequence) → (batch, sequence, d_model)
-```
-
-所以，Embedding 本质上就是一次查表：**token ID 是下标，weight 是向量表，输出按照 ID 顺序排列的向量。**
-
-### Embedding 权重表是哪里来的？
-
-这张表不是 Tokenizer 提供的，而是语言模型自己创建并通过训练学出来的。
-
-模型初始化时，我们先随机创建一张表。在我们的模型中：
-
-```text
-词表大小：10,000
-每个向量的维度：512
-权重表形状：(10000, 512)
-```
-
-对应代码在 `cs336_basics/model.py:26`：
-
-```python
-self.weight = nn.Parameter(
-    torch.empty(vocab_size, d_model)
-)
-
-nn.init.trunc_normal_(
-    self.weight,
-    mean=0.0,
-    std=1.0,
-    a=-3.0,
-    b=3.0,
-)
-```
-
-初始时，这些向量只是随机数，并没有什么语义。
-
-现在先记住：这张表由模型随机创建，里面的数值会在训练时不断更新。至于预测错误怎样变成梯度、梯度又怎样更新表中的行，我们放到第六章按顺序展开。
-
-训练结束后，这张表会保存在 `checkpoint.pt` 的 `token_embeddings.weight` 中。推理时重新加载，再执行查表：
-
-```python
-self.weight[token_ids]
-```
-
-因此，Tokenizer 和 Embedding 学习的是两种不同东西：
-
-> **Tokenizer 学的是“怎么切分文本”；Embedding 学的是“每个 token 用什么向量表示”。**
-
-### 动手练习：Embedding 查表
-
-[Embedding 查表：token IDs → 向量](exercises/embedding/README.md)
-
-运行测试：
-
-```bash
-.venv/bin/python exercises/run.py embedding
-```
-
-## 三、Transformer Blocks：结合上下文更新向量
-
-Embedding 之后，向量会经过多层 Transformer Blocks。这里会结合上下文更新每个位置的表示，让模型不仅看到当前 token，也能利用它周围的信息。
-
-这一部分还可以继续拆成 Attention、RMSNorm、前馈网络等组件，我们后面再逐层介绍。
-
-## 四、LM Head 与 Softmax：向量 → 下一个 token 的概率
-
-LM Head 把向量转换成词表中每个 token 的分数，也就是 logits。比如词表中有 10,000 个 token，就会输出 10,000 个分数：
-
-```text
-上下文向量
+→ Embedding
+→ 多层 Transformer Blocks
+→ 最终 RMSNorm
 → LM Head
-→ 每个 token 的 logits
+→ logits
 → Softmax
-→ 每个 token 成为下一个 token 的概率
+→ 解码选择 token
+→ Tokenizer 转回文本
+→ 自回归循环直到停止
 ```
 
-这些分数还不是概率，Softmax 会把它们转换成总和为 1 的概率分布。
+## A. Tokenizer：文本 → Token IDs
 
-## 五、解码：下一个 token 的概率 → 输出文本
+### 第 1 课：UTF-8 字节——为什么任何文本都能表示？
 
-模型会根据概率分布选出一个 token，把它接在输入后面，再重复整个过程，直到生成结束。推理时只需要使用训练好的参数，不需要更新模型。
+[练习：文本 → UTF-8 byte IDs](exercises/utf8_bytes/README.md)
 
-## 六、训练：模型怎样学会给出正确的概率？
+理解 256 个基础字节怎样覆盖中文、emoji 和未见过的文本。
 
-前面讲的是模型怎样生成文本。接下来才讨论训练：模型里的参数并不是人工指定的，而是通过大量“预测下一个 token”的练习学出来的。
+### 第 2 课：BPE 训练——merges 和 vocab 怎样学出来？
 
-训练数据里有正确的下一个 token，因此我们可以检查模型给它分配了多少概率。
+[练习：BPE 训练](exercises/bpe/README.md)
 
-例如，正确答案是 `time`：
+统计相邻 pair，按频次和 tie 规则合并，制作 Tokenizer 的合并规则和词典。
+
+### 第 3 课：Special Tokens——特殊标记怎样保留？
+
+[练习：切分并保留 special tokens](exercises/special_tokens/README.md)
+
+处理重叠 special token 的最长匹配，并了解真实流式编码中的 chunk 边界。
+
+### 第 4 课：BPE 编码——Query 怎样变成模型输入？
+
+[练习：完整 BPE 编码](exercises/bpe_encode/README.md)
+
+按照 merges 的学习顺序切分新文本，再查询 vocab 得到 token IDs。
+
+## B. Transformer：Token IDs → 上下文向量矩阵
+
+### 第 5 课：Embedding——ID 怎样变成向量？
+
+[练习：Embedding 查表](exercises/embedding/README.md)
+
+把 `(sequence,)` 的 IDs 转换成 `(sequence, d_model)` 的矩阵。
+
+### 第 6 课：Linear——矩阵怎样做可训练投影？
+
+[练习：无 bias Linear](exercises/linear/README.md)
+
+用矩阵乘法和点积理解 Q/K/V、前馈网络与 LM Head 共有的线性变换。
+
+### 第 7 课：RMSNorm——为什么先调整向量尺度？
+
+[练习：RMSNorm](exercises/rmsnorm/README.md)
+
+根据均方根归一化向量，再应用可学习 gain。
+
+### 第 8 课：RoPE——怎样加入相对位置信息？
+
+[练习：旋转位置编码](exercises/rope/README.md)
+
+按维度配对旋转向量，让位置差反映到 Attention 的内积中。
+
+### 第 9 课：Scaled Attention——怎样按相关性读取信息？
+
+[练习：softmax(QK^T / sqrt(d_k))V](exercises/scaled_attention/README.md)
+
+理解 Q/K/V 的来源、注意力权重以及 Value 加权和。
+
+### 第 10 课：Causal Mask——为什么不能偷看未来？
+
+[练习：应用因果掩码](exercises/causal_mask/README.md)
+
+在 Softmax 前屏蔽未来位置，保证位置 `i` 只能使用 `0...i` 的信息。
+
+### 第 11 课：Multi-Head Attention——为什么拆成多个头？
+
+[练习：拆分 Attention heads](exercises/multihead_attention/README.md)
+
+把 `d_model` 维向量拆成多个头，分别 Attention，再拼接和输出投影。
+
+### 第 12 课：完整 Causal Multi-Head Attention——怎样把各头组合起来？
+
+[综合练习：Q/K/V 投影 + RoPE + 逐头因果 Attention + 输出投影](exercises/causal_multihead/README.md)
+
+亲手完成完整 MHA，确认 RoPE 只作用于 Q/K，未来位置不参与 Attention，最后拼接各头并应用输出投影。
+
+### 第 13 课：SwiGLU——前馈网络怎样做门控？
+
+[练习：SiLU 与 SwiGLU 核心计算](exercises/swiglu/README.md)
+
+理解 `SiLU(gate) × value`，以及真实实现中的 w1、w2、w3 投影。
+
+### 第 14 课：Transformer Block——各组件怎样组合？
+
+[练习：Pre-Norm 与残差相加](exercises/transformer_block/README.md)
+
+串起 `x + Attention(RMSNorm(x))` 和 `x + SwiGLU(RMSNorm(x))` 两次残差连接。
+
+## C. 模型输出：上下文向量 → 候选 token 概率
+
+### 第 15 课：完整 Transformer Block——Pre-Norm 顺序怎样组合？
+
+[综合练习：完整 Pre-Norm Block](exercises/transformer_block_forward/README.md)
+
+实际组合两次归一化、Attention、FFN 与两次残差，第二次使用第一次残差后的表示。
+
+### 第 16 课：完整 TransformerLM——模型前向怎样组装？
+
+[综合练习：Embedding + Blocks + 最终 RMSNorm + LM Head](exercises/transformer_lm_forward/README.md)
+
+把所有组件按真实顺序组合，输出每个位置的 logits，并明确最终 RMSNorm 的位置。
+
+### 第 17 课：LM Head——最后一个位置怎样变成 logits？
+
+[练习：LM Head](exercises/lm_head/README.md)
+
+从 `hidden_matrix` 取最后一个位置，经过最终 RMSNorm，再与词表中每个 token 的权重行做点积。
+
+### 第 18 课：Softmax——logits 怎样变成概率？
+
+[练习：数值稳定的 Softmax](exercises/softmax/README.md)
+
+把任意分数转换成总和为 1 的概率分布。
+
+## D. 解码：概率 → 用户看到的文本
+
+### 第 19 课：贪心解码——怎样选择并还原一个 token？
+
+[练习：单步贪心解码](exercises/greedy_decoding/README.md)
+
+选择最大概率的 token ID，再由 Tokenizer 根据 vocab 转回文本。
+
+### 第 20 课：Temperature——怎样调整分布的平滑程度？
+
+[练习：Temperature Scaling + Softmax](exercises/temperature/README.md)
+
+在 Softmax 前用温度缩放 logits：高温更平滑，低温更尖锐。
+
+### 第 21 课：Top-p——怎样限制采样候选集合？
+
+[练习：Top-p 筛选与重新归一化](exercises/top_p_sampling/README.md)
+
+按概率排序，选择累计概率达到阈值的最小候选集合。
+
+### 第 22 课：自回归生成——完整回答怎样一步步产生？
+
+[练习：自回归贪心生成](exercises/autoregressive_generation/README.md)
+
+把新 token 接回输入，循环预测，直到 EOS 或最大生成长度。
+
+## 推理部分回顾
+
+到这里，推理不再留黑盒：
 
 ```text
-P(time) = 0.01 → loss ≈ 4.605
-P(time) = 0.80 → loss ≈ 0.223
+文本 → bytes / token IDs → 向量矩阵
+→ Attention 与前馈网络逐层更新
+→ logits → 概率 → token ID → 文本
 ```
 
-交叉熵 loss 的计算是：
+简化列表练习与真实 PyTorch 工程的对应关系见 [A1 工程对照](A1_ENGINEERING.zh-CN.md)。
+
+# 第二部分：训练——模型参数从哪里来？
+
+推理使用训练好的参数；训练则通过大量“预测下一个 token”的样本，反复执行：
 
 ```text
-loss = -log(正确 token 的概率)
-```
-
-所以，正确答案的概率越高，loss 越小。训练的目标，就是通过调整参数来降低这个 loss。
-
-### 动手练习：Softmax 与交叉熵
-
-[Softmax 与交叉熵：把预测错误转换成 loss](exercises/language_model_loss/README.md)
-
-运行测试：
-
-```bash
-.venv/bin/python exercises/run.py language_model_loss
-```
-
-### 反向传播：loss 怎样变成参数的修改方向？
-
-loss 只是一个数，它告诉我们这次预测有多差，却没有直接告诉我们每个参数应该怎样修改。
-
-反向传播会沿着前面的计算过程反向走一遍，利用链式法则计算：**如果某个参数发生一点变化，loss 会怎样变化？** 计算结果就是参数的梯度。
-
-```text
-前向：Token IDs → Embedding → Transformer → LM Head → 概率 → loss
-反向：loss → 各层输出的梯度 → 各层参数的梯度
-```
-
-有了梯度，优化器就可以更新参数。用最简单的 SGD 表示就是：
-
-```text
-新参数 = 旧参数 - 学习率 × 梯度
-```
-
-我们的真实项目使用 AdamW，它是在这个基本思路上进一步改进的优化器。
-
-### 以 Embedding 为例：查过的行怎样被训练？
-
-假设一次输入是：
-
-```python
-token_ids = [2, 0, 2]
-```
-
-前向查表时，依次取出第 2、0、2 行。这些向量继续经过后面的网络，最终得到预测概率并计算出 loss。
-
-随后，反向传播会把梯度传回这三个输出位置。假设得到：
-
-```python
-grad_output = [
-    [1.0, 1.0],  # 第一个位置，对应 token 2
-    [0.5, 0.5],  # 第二个位置，对应 token 0
-    [1.0, 1.0],  # 第三个位置，对应 token 2
-]
-```
-
-这些梯度不是人工随便指定的，而是从 loss 反向计算出来的。算法练习会直接给出它们，让我们专注于 Embedding 这一层怎样更新。
-
-由于 token 2 出现了两次，它对 loss 的两份影响都要累加到第 2 行：
-
-```text
-token 0 的梯度：[0.5, 0.5]
-token 2 的梯度：[1.0, 1.0] + [1.0, 1.0] = [2.0, 2.0]
-token 1 没有被使用，不需要更新
-```
-
-假设学习率为 0.1，使用 SGD 更新：
-
-```text
-token 0：[0.1, 0.2] - 0.1 × [0.5, 0.5] = [0.05, 0.15]
-token 2：[0.5, 0.6] - 0.1 × [2.0, 2.0] = [0.3, 0.4]
-```
-
-所以，Embedding 的训练并不只是“查表”。完整过程是：
-
-```text
-根据 token ID 查表
-→ 使用这些向量预测下一个 token
+构造输入与右移目标
+→ 前向预测
 → 计算 loss
 → 反向传播得到梯度
-→ 按 token ID 累加梯度
-→ 更新被查到的权重行
+→ 调整梯度与学习率
+→ 更新参数
+→ 验证并保存 checkpoint
 ```
 
-经过大量文本和许多轮更新，这些向量会逐渐变成适合语言建模的特征表示。语义不是人工填进去的，而是从“预测下一个 token”的任务中学出来的。
+## E. Loss 与反向传播：预测错误怎样变成调整方向？
 
-### 动手练习：Embedding 反向传播与权重更新
+### 第 23 课：交叉熵——正确 token 的概率怎样变成 loss？
 
-[Embedding 反向传播：梯度累加与权重更新](exercises/embedding_backward/README.md)
+[练习：Softmax 与交叉熵 Loss](exercises/language_model_loss/README.md)
 
-运行测试：
+理解 `-log(正确 token 的概率)`，以及为什么正确答案概率越低，惩罚越大。
 
-```bash
-.venv/bin/python exercises/run.py embedding_backward
+### 第 24 课：梯度下降——为什么减去梯度能降低 loss？
+
+[练习：一维梯度下降](exercises/gradient_descent/README.md)
+
+用 `loss = (w - 3)^2` 亲手验证梯度方向、学习率和多步更新。
+
+### 第 25 课：Softmax 交叉熵反向传播——logits 梯度怎样产生？
+
+[练习：Softmax + Cross Entropy Backward](exercises/softmax_cross_entropy_backward/README.md)
+
+推导并实现 `gradient = probability - one_hot(target)`，看清链式法则的结果。
+
+### 第 26 课：Embedding Backward——重复 token 为什么累加梯度？
+
+[练习：Embedding 梯度累加与 SGD 更新](exercises/embedding_backward/README.md)
+
+把每个输出位置的梯度送回原权重行，理解重复 ID 累加和未使用行不变。
+
+## F. 优化器与训练稳定性：参数怎样更新？
+
+### 第 27 课：AdamW——真实项目怎样更新参数？
+
+[练习：一步 AdamW](exercises/adamw/README.md)
+
+实现一阶矩、二阶矩、bias correction 和 decoupled weight decay。
+
+### 第 28 课：Gradient Clipping——梯度爆炸时怎么办？
+
+[练习：按 L2 范数裁剪梯度](exercises/gradient_clipping/README.md)
+
+计算全局梯度范数，超过阈值时等比例缩小，不改变梯度方向。
+
+### 第 29 课：学习率调度——为什么先 warmup 再 cosine decay？
+
+[练习：Warmup + Cosine Learning Rate](exercises/cosine_learning_rate/README.md)
+
+让训练初期逐步增大学习率，随后按余弦曲线减小。
+
+## G. 数据与完整训练闭环
+
+### 第 30 课：Training Batch——语言模型样本怎样构造？
+
+[练习：输入与右移一位的目标](exercises/training_batch/README.md)
+
+从连续 token 序列构造 inputs 和 targets，并了解真实工程中的 uint16 与 memmap。
+
+### 第 31 课：Tiny Language Model——训练真的能让 loss 下降吗？
+
+[综合练习：训练一个 Bigram 语言模型](exercises/tiny_language_model/README.md)
+
+从全零参数开始，独立完成预测、loss、梯度、平均和 SGD 更新，观察正确 token 概率上升。
+
+### 第 32 课：Resource Accounting——模型有多大，训练状态占多少内存？
+
+[练习：Transformer 参数量与训练状态计算](exercises/resource_accounting/README.md)
+
+逐组件计算参数量，估算参数、梯度与 AdamW 状态内存，并理解 FLOPs 与参数量的区别。
+
+## H. 从算法练习到真实 A1 工程
+
+完成核心算法后，还需要理解这些工程环节：
+
+- **Checkpoint**：同时保存模型、优化器状态和训练步数，才能完整恢复训练。
+- **Validation**：使用不参与参数更新的数据评估泛化，不能只看 training loss。
+- **Mini-batch 与 memmap**：按需读取大批数据，控制内存和计算成本。
+- **混合精度与 GPU**：真实训练使用 Tensor 和 CUDA/bf16，而不是 Python 列表。
+- **流式 Tokenizer**：处理数 GB 文本和任意 chunk 边界，不能一次性载入全部语料。
+
+这些内容与本仓库实际文件的对应关系见 [CS336 A1：简化练习与真实工程对照](A1_ENGINEERING.zh-CN.md)。
+
+## 真实训练结果
+
+本项目已经在 TinyStories 上完成真实训练：
+
+```text
+模型：约 22.7M 参数
+硬件：单张 NVIDIA A100 40GB
+训练：10,000 步，327.68M tokens
+耗时：约 28.2 分钟
+独立 100-batch validation loss：1.38567
+Validation perplexity：3.9975
 ```
+
+实验配置、曲线和生成结果见 [实验报告](RESULTS.zh-CN.md)，复现步骤见 [运行指南](RUNNING.zh-CN.md)。
+
+到这里，课程覆盖了 A1 的 Tokenizer、Transformer、训练、解码和实验落地。可以继续阅读 `cs336_basics/` 中的真实实现，把每道简化练习对应回完整模型。
